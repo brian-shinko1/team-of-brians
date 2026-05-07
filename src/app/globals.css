@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/* disable dark mode for this admin dashboard */
 
 @theme inline {
   --color-background: var(--background);
