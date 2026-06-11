@@ -1148,7 +1148,180 @@ export function extractSessionHeadline(raw: string): string {
   return trunc(firstLine, 120);
 }
 
-import type { SessionLogEntry } from "./types";
+import type { EngagementDecision, EngagementRecord, OpenQuestion, Stakeholder, SessionLogEntry } from "./types";
+
+// ── Engagement record auto-extraction ────────────────────────────────────────
+
+function erNextId(prefix: string, existing: { id: string }[]): string {
+  const nums = existing.map((x) => parseInt(x.id.replace(`${prefix}-`, ""), 10)).filter((n) => !isNaN(n));
+  const next = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+  return `${prefix}-${String(next).padStart(3, "0")}`;
+}
+
+/**
+ * Parses a completed agent output and returns a partial EngagementRecord patch.
+ * Only populates fields that are currently empty; never overwrites existing data.
+ * Returns null if nothing was extracted or the output couldn't be parsed.
+ */
+export function extractEngagementFromAgent(
+  agentId: string,
+  output: string,
+  current: EngagementRecord
+): Partial<EngagementRecord> | null {
+  const patch: Partial<EngagementRecord> = {};
+
+  try {
+    if (agentId === "summarise") {
+      const d = JSON.parse(output) as SummariseOutput;
+      if (d.participants?.length) {
+        const existingNames = new Set(current.stakeholders.map((s) => s.name.toLowerCase()));
+        const added: Stakeholder[] = d.participants
+          .filter((p) => p.name && !existingNames.has(p.name.toLowerCase()))
+          .map((p) => ({
+            id: `sh-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+            name: p.name,
+            organisation: "",
+            role: p.role ?? "",
+            contact: "",
+          }));
+        if (added.length) patch.stakeholders = [...current.stakeholders, ...added];
+      }
+    }
+
+    if (agentId === "cps") {
+      const d = JSON.parse(output) as CpsOutput;
+      const today = new Date().toISOString().slice(0, 10);
+
+      // Client background — use organisation or client name
+      if (!current.clientBackground) {
+        const bg = d.context?.organisation ?? d.meta?.client ?? "";
+        if (bg) patch.clientBackground = bg;
+      }
+
+      // Project brief — compose from trigger + problem + solution
+      if (!current.projectBrief) {
+        const parts = [
+          d.context?.trigger,
+          d.problem?.primary_problem && `Problem: ${d.problem.primary_problem}`,
+          d.solution?.approach && `Approach: ${d.solution.approach}`,
+        ].filter(Boolean) as string[];
+        if (parts.length) patch.projectBrief = parts.join("\n\n");
+      }
+
+      // Stakeholders from CPS context
+      if (d.context?.stakeholders?.length) {
+        const base = patch.stakeholders ?? current.stakeholders;
+        const existingNames = new Set(base.map((s) => s.name.toLowerCase()));
+        const added: Stakeholder[] = d.context.stakeholders
+          .filter((s) => s.name && !existingNames.has(s.name.toLowerCase()))
+          .map((s) => ({
+            id: `sh-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+            name: s.name,
+            organisation: patch.clientBackground ?? current.clientBackground ?? "",
+            role: s.role ?? "",
+            contact: "",
+          }));
+        if (added.length) patch.stakeholders = [...base, ...added];
+      }
+
+      // Open questions from ideation
+      if (d.ideation?.open_questions?.length) {
+        const base = patch.openQuestions ?? current.openQuestions;
+        const existing = new Set(base.map((q) => q.question.toLowerCase()));
+        const added: OpenQuestion[] = d.ideation.open_questions
+          .filter((q) => q && !existing.has(q.toLowerCase()))
+          .map((q, i) => ({
+            id: erNextId("OQ", [...base, ...Array(i).fill({ id: "OQ-0" })]),
+            question: q,
+            owner: "",
+            status: "open" as const,
+            resolution: null,
+            blocks: "",
+            priority: "medium" as const,
+          }));
+        if (added.length) patch.openQuestions = [...base, ...added];
+      }
+
+      // Decisions from trade-off analysis
+      if (d.solution?.trade_off_analysis?.length) {
+        const base = patch.decisions ?? current.decisions;
+        const existing = new Set(base.map((d) => d.decision.toLowerCase()));
+        const added: EngagementDecision[] = d.solution.trade_off_analysis
+          .filter((t) => t.decision && !existing.has(`${t.decision}: ${t.chosen}`.toLowerCase()))
+          .map((t, i) => ({
+            id: erNextId("D", [...base, ...Array(i).fill({ id: "D-0" })]),
+            decision: `${t.decision}: ${t.chosen}`,
+            rationale: t.rationale ?? undefined,
+            source: "CPS",
+            date: today,
+          }));
+        if (added.length) patch.decisions = [...base, ...added];
+      }
+    }
+
+    if (agentId === "prd") {
+      // Unwrap AIRIA envelope if present
+      let src = output;
+      try {
+        const p = JSON.parse(output);
+        if (Array.isArray(p) && p[0]?.["$type"] === "modelStructured" && p[0]?.Value) {
+          src = JSON.stringify(p[0].Value);
+        }
+      } catch { /* use raw */ }
+
+      const d = JSON.parse(src) as PrdOutput;
+      const today = new Date().toISOString().slice(0, 10);
+
+      // Scope out
+      if (!current.scopeOut.length && d.out_of_scope?.length) {
+        const items = (d.out_of_scope as Array<PrdOutOfScope | string>)
+          .map((s) => (typeof s === "string" ? s : s.item ?? s.title ?? s.name ?? ""))
+          .filter(Boolean) as string[];
+        if (items.length) patch.scopeOut = items;
+      }
+
+      // Flagged FRs → open questions
+      if (d.functional_requirements?.length) {
+        const flagged = d.functional_requirements.filter((r) => r.flagged_for_clarification);
+        if (flagged.length) {
+          const base = patch.openQuestions ?? current.openQuestions;
+          const existing = new Set(base.map((q) => q.question.toLowerCase()));
+          const added: OpenQuestion[] = flagged
+            .filter((r) => !existing.has(r.flagged_for_clarification!.toLowerCase()))
+            .map((r, i) => ({
+              id: erNextId("OQ", [...base, ...Array(i).fill({ id: "OQ-0" })]),
+              question: r.flagged_for_clarification!,
+              owner: "",
+              status: "open" as const,
+              resolution: null,
+              blocks: r.id ?? "",
+              priority: "high" as const,
+            }));
+          if (added.length) patch.openQuestions = [...base, ...added];
+        }
+      }
+
+      // Assumptions → decisions
+      if (d.assumptions?.length) {
+        const base = patch.decisions ?? current.decisions;
+        const existing = new Set(base.map((d) => d.decision.toLowerCase()));
+        const added: EngagementDecision[] = d.assumptions
+          .filter((a) => a && !existing.has(a.toLowerCase()))
+          .map((a, i) => ({
+            id: erNextId("D", [...base, ...Array(i).fill({ id: "D-0" })]),
+            decision: a,
+            source: "PRD",
+            date: today,
+          }));
+        if (added.length) patch.decisions = [...base, ...added];
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return Object.keys(patch).length > 0 ? patch : null;
+}
 
 /**
  * Builds the lean project context string injected into Co-Pilot and Jarvis.
