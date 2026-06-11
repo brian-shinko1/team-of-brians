@@ -273,7 +273,7 @@ function MeetingInput({ onReady }: { onReady: (value: string) => void }) {
 // ── Main modal ────────────────────────────────────────────────────────────────
 
 export function AgentModal({ agentId, onClose, prefilledInput }: AgentModalProps) {
-  const { agents, runAgent, runSTT, updateAgent, driveFolders, settings, stagedPrinciplesInput } = useAgents();
+  const { agents, runAgent, runSTT, updateAgent, driveFolders, settings, stagedPrinciplesInput, currentClient } = useAgents();
   const [input, setInput] = useState("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [principlesAudio, setPrinciplesAudio] = useState<File | null>(null);
@@ -436,6 +436,11 @@ export function AgentModal({ agentId, onClose, prefilledInput }: AgentModalProps
   const outputAgent = isMeetingInput ? summariseAgent : agent;
   const outputAgentId = isMeetingInput ? "summarise" : agentId;
   const formattedOutput = outputAgentId && outputAgent?.output ? formatOutput(outputAgentId, outputAgent.output) : "";
+
+  // For doc_agent Drive saves, append a formal sign-off section for both parties
+  const driveContent = outputAgentId === "doc_agent" && formattedOutput
+    ? formattedOutput + `\n\n---\n\n## Sign-Off\n\nBy signing below, both parties confirm they have reviewed and agreed to this Definition Document.\n\n### Shinko1\n\n| | |\n|---|---|\n| **Name** | |\n| **Title** | |\n| **Signature** | |\n| **Date** | |\n\n### ${currentClient.name}\n\n| | |\n|---|---|\n| **Name** | |\n| **Title** | |\n| **Signature** | |\n| **Date** | |\n`
+    : formattedOutput;
 
   const driveFileName = outputAgent ? `${outputAgent.name}-${new Date().toISOString().slice(0, 10)}.md` : "";
   const driveFolderId = outputAgentId && outputAgent
@@ -796,11 +801,13 @@ export function AgentModal({ agentId, onClose, prefilledInput }: AgentModalProps
 
       {saveDriveOpen && outputAgentId && outputAgent && (
         <SaveToDriveDialog
-          content={formattedOutput}
+          content={driveContent}
           defaultFileName={driveFileName}
           folderId={driveFolderId}
+          fileId={outputAgent.driveFileId}
+          agentId={outputAgentId}
           onClose={() => setSaveDriveOpen(false)}
-          onSaved={(url) => { updateAgent(outputAgentId, { driveUrl: url }); setSaveDriveOpen(false); }}
+          onSaved={(url, id) => { updateAgent(outputAgentId, { driveUrl: url, driveFileId: id }); setSaveDriveOpen(false); }}
         />
       )}
     </>
