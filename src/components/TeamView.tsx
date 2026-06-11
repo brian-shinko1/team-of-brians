@@ -589,7 +589,22 @@ export function TeamView() {
   const bypass = PROFILE_BYPASS[settings.pipelineProfile ?? "standard"];
   const [modalId,    setModalId]    = useState<string | null>(null);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const prevStatusRef = useRef<Record<string, string>>({});
+  const [zoom,       setZoom]       = useState(0.8);
+  const prevStatusRef  = useRef<Record<string, string>>({});
+  const containerRef   = useRef<HTMLDivElement>(null);
+
+  // Ctrl/Cmd + scroll to zoom
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      setZoom(z => Math.min(2, Math.max(0.25, z - e.deltaY * 0.0008)));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   // Detect agent status changes → spawn flying paper deliveries
   useEffect(() => {
@@ -652,8 +667,26 @@ export function TeamView() {
 
   return (
     <>
-      <div className="w-full overflow-auto rounded-xl border border-zinc-200 bg-[#f8f7f4]">
-        <svg width={svgW} height={svgH} style={{ display: "block", minWidth: svgW }}>
+      <div ref={containerRef} className="w-full overflow-auto rounded-xl border border-zinc-200 bg-[#f8f7f4] relative">
+
+        {/* Zoom controls */}
+        <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-0.5 bg-white/80 backdrop-blur-sm border border-zinc-200 rounded-lg px-1.5 py-1 shadow-sm">
+          <button
+            onClick={() => setZoom(z => Math.max(0.25, +(z - 0.15).toFixed(2)))}
+            className="w-6 h-6 flex items-center justify-center rounded hover:bg-zinc-100 text-zinc-600 text-[14px] font-light transition-colors"
+          >−</button>
+          <button
+            onClick={() => setZoom(1)}
+            className="px-1.5 text-[10px] font-medium text-zinc-500 hover:text-zinc-800 transition-colors tabular-nums w-9 text-center"
+          >{Math.round(zoom * 100)}%</button>
+          <button
+            onClick={() => setZoom(z => Math.min(2, +(z + 0.15).toFixed(2)))}
+            className="w-6 h-6 flex items-center justify-center rounded hover:bg-zinc-100 text-zinc-600 text-[14px] font-light transition-colors"
+          >+</button>
+        </div>
+
+        <svg width={svgW * zoom} height={svgH * zoom} style={{ display: "block", minWidth: svgW * zoom }}>
+          <g transform={`scale(${zoom})`}>
           <g transform={`translate(${ox},${oy})`}>
 
             {/* ── Throne tile (King Brian's platform) ── */}
@@ -838,6 +871,7 @@ export function TeamView() {
             ))}
 
           </g>
+          </g>{/* end scale */}
         </svg>
       </div>
 

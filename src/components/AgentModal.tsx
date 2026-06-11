@@ -439,7 +439,7 @@ export function AgentModal({ agentId, onClose, prefilledInput }: AgentModalProps
 
   // For doc_agent Drive saves, append a formal sign-off section for both parties
   const driveContent = outputAgentId === "doc_agent" && formattedOutput
-    ? formattedOutput + `\n\n---\n\n## Sign-Off\n\nBy signing below, both parties confirm they have reviewed and agreed to this Definition Document.\n\n### Shinko1\n\n| | |\n|---|---|\n| **Name** | |\n| **Title** | |\n| **Signature** | |\n| **Date** | |\n\n### ${currentClient.name}\n\n| | |\n|---|---|\n| **Name** | |\n| **Title** | |\n| **Signature** | |\n| **Date** | |\n`
+    ? formattedOutput + `\n\n---\n\n## Sign-Off\n\nBy signing below, both parties confirm they have reviewed and agreed to this Definition Document.\n\n### Shinko1\n\n| Field | Value |\n|---|---|\n| **Name** | |\n| **Title** | |\n| **Signature** | |\n| **Date** | |\n\n### ${currentClient.name}\n\n| Field | Value |\n|---|---|\n| **Name** | |\n| **Title** | |\n| **Signature** | |\n| **Date** | |\n`
     : formattedOutput;
 
   const driveFileName = outputAgent ? `${outputAgent.name}-${new Date().toISOString().slice(0, 10)}.md` : "";
