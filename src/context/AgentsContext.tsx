@@ -18,6 +18,18 @@ const AGENT_PIPELINE_DEFAULTS = Object.fromEntries(
   INITIAL_AGENTS.map((a) => [a.id, a.pipelineId])
 );
 
+function dedupById<T extends { id: string }>(items: T[], prefix: string): T[] {
+  const seen = new Set<string>();
+  return items.map((item) => {
+    if (!seen.has(item.id)) { seen.add(item.id); return item; }
+    const nums = [...seen].map((id) => parseInt(id.replace(`${prefix}-`, ""), 10)).filter((n) => !isNaN(n) && n > 0);
+    const next = nums.length > 0 ? Math.max(...nums) + 1 : seen.size + 1;
+    const newId = `${prefix}-${String(next).padStart(3, "0")}`;
+    seen.add(newId);
+    return { ...item, id: newId };
+  });
+}
+
 function loadClients(): Client[] {
   if (typeof window === "undefined") return DEMO_CLIENTS;
   try {
@@ -45,6 +57,7 @@ function loadClients(): Client[] {
         for (const a of INITIAL_AGENTS) {
           if (!patched[a.id]) patched[a.id] = { ...a };
         }
+        const er = p.engagementRecord;
         return {
           ...p,
           agents: patched,
@@ -52,6 +65,11 @@ function loadClients(): Client[] {
             ...p.settings,
             pipelineProfile: p.settings.pipelineProfile ?? "standard",
           },
+          engagementRecord: er ? {
+            ...er,
+            openQuestions: dedupById(er.openQuestions ?? [], "OQ"),
+            decisions: dedupById(er.decisions ?? [], "D"),
+          } : er,
         };
       }),
     }));

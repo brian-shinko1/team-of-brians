@@ -299,7 +299,7 @@ export function prdJsonToMd(raw: string): string {
   try { d = JSON.parse(unwrapped); } catch { return raw; }
 
   const L: string[] = [];
-  const sec = (title: string) => { L.push("", `---`, "", `## ${title}`, ""); };
+  const sec = (title: string) => { L.push("", `## ${title}`, ""); };
 
   // ── Title + metadata ─────────────────────────────────────────────────────────
   const title = d.meta?.title ?? d.meta?.project;
@@ -1230,15 +1230,18 @@ export function extractEngagementFromAgent(
         const existing = new Set(base.map((q) => q.question.toLowerCase()));
         const added: OpenQuestion[] = d.ideation.open_questions
           .filter((q) => q && !existing.has(q.toLowerCase()))
-          .map((q, i) => ({
-            id: erNextId("OQ", [...base, ...Array(i).fill({ id: "OQ-0" })]),
-            question: q,
-            owner: "",
-            status: "open" as const,
-            resolution: null,
-            blocks: "",
-            priority: "medium" as const,
-          }));
+          .reduce<OpenQuestion[]>((acc, q) => {
+            acc.push({
+              id: erNextId("OQ", [...base, ...acc]),
+              question: q,
+              owner: "",
+              status: "open" as const,
+              resolution: null,
+              blocks: "",
+              priority: "medium" as const,
+            });
+            return acc;
+          }, []);
         if (added.length) patch.openQuestions = [...base, ...added];
       }
 
@@ -1248,13 +1251,16 @@ export function extractEngagementFromAgent(
         const existing = new Set(base.map((d) => d.decision.toLowerCase()));
         const added: EngagementDecision[] = d.solution.trade_off_analysis
           .filter((t) => t.decision && !existing.has(`${t.decision}: ${t.chosen}`.toLowerCase()))
-          .map((t, i) => ({
-            id: erNextId("D", [...base, ...Array(i).fill({ id: "D-0" })]),
-            decision: `${t.decision}: ${t.chosen}`,
-            rationale: t.rationale ?? undefined,
-            source: "CPS",
-            date: today,
-          }));
+          .reduce<EngagementDecision[]>((acc, t) => {
+            acc.push({
+              id: erNextId("D", [...base, ...acc]),
+              decision: `${t.decision}: ${t.chosen}`,
+              rationale: t.rationale ?? undefined,
+              source: "CPS",
+              date: today,
+            });
+            return acc;
+          }, []);
         if (added.length) patch.decisions = [...base, ...added];
       }
     }
@@ -1288,15 +1294,18 @@ export function extractEngagementFromAgent(
           const existing = new Set(base.map((q) => q.question.toLowerCase()));
           const added: OpenQuestion[] = flagged
             .filter((r) => !existing.has(r.flagged_for_clarification!.toLowerCase()))
-            .map((r, i) => ({
-              id: erNextId("OQ", [...base, ...Array(i).fill({ id: "OQ-0" })]),
-              question: r.flagged_for_clarification!,
-              owner: "",
-              status: "open" as const,
-              resolution: null,
-              blocks: r.id ?? "",
-              priority: "high" as const,
-            }));
+            .reduce<OpenQuestion[]>((acc, r) => {
+              acc.push({
+                id: erNextId("OQ", [...base, ...acc]),
+                question: r.flagged_for_clarification!,
+                owner: "",
+                status: "open" as const,
+                resolution: null,
+                blocks: r.id ?? "",
+                priority: "high" as const,
+              });
+              return acc;
+            }, []);
           if (added.length) patch.openQuestions = [...base, ...added];
         }
       }
@@ -1307,12 +1316,15 @@ export function extractEngagementFromAgent(
         const existing = new Set(base.map((d) => d.decision.toLowerCase()));
         const added: EngagementDecision[] = d.assumptions
           .filter((a) => a && !existing.has(a.toLowerCase()))
-          .map((a, i) => ({
-            id: erNextId("D", [...base, ...Array(i).fill({ id: "D-0" })]),
-            decision: a,
-            source: "PRD",
-            date: today,
-          }));
+          .reduce<EngagementDecision[]>((acc, a) => {
+            acc.push({
+              id: erNextId("D", [...base, ...acc]),
+              decision: a,
+              source: "PRD",
+              date: today,
+            });
+            return acc;
+          }, []);
         if (added.length) patch.decisions = [...base, ...added];
       }
     }
