@@ -60,7 +60,7 @@ const textareaCls = `${inputCls} resize-none`;
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function EngagementRecordPanel() {
-  const { engagementRecord: record, updateEngagementRecord, driveFolders } = useAgents();
+  const { engagementRecord: record, updateEngagementRecord, driveFolders, resolvedSinceLastCps, openModal, agents } = useAgents();
 
   const [saving, setSaving] = useState(false);
   const [driveUrl, setDriveUrl] = useState<string | null>(null);
@@ -198,6 +198,27 @@ export function EngagementRecordPanel() {
 
   return (
     <div className="border border-zinc-200 rounded-xl p-[18px] mb-5">
+      {/* Resolved OQ nudge */}
+      {resolvedSinceLastCps > 0 && (
+        <div className="flex items-center justify-between gap-3 mb-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
+          <p className="text-[11px] text-amber-700">
+            {resolvedSinceLastCps} question{resolvedSinceLastCps > 1 ? "s" : ""} resolved since last CPS run — re-run CPS to reflect answers
+          </p>
+          <button
+            onClick={() => {
+              const resolvedQs = record.openQuestions.filter((q) => q.status === "resolved" && q.resolution);
+              const resolvedBlock = resolvedQs
+                .map((q) => `- ${q.id}: ${q.question}\n  Answer: ${q.resolution}`)
+                .join("\n");
+              const base = agents["cps"]?.output ?? "";
+              openModal("cps", `${base}\n\n---\n\n[RESOLVED QUESTIONS — incorporate into updated CPS]\n${resolvedBlock}`);
+            }}
+            className="shrink-0 text-[11px] font-medium px-2.5 py-1 rounded-md bg-amber-100 border border-amber-300 text-amber-800 hover:bg-amber-200 transition-colors"
+          >
+            Re-run CPS
+          </button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div>

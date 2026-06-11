@@ -446,6 +446,15 @@ export function serializeEngagementRecord(record: EngagementRecord): string {
     }
   }
 
+  const resolved = record.openQuestions.filter((q) => q.status === "resolved" && q.resolution);
+  if (resolved.length > 0) {
+    lines.push("\nResolved Questions:");
+    for (const q of resolved) {
+      lines.push(`  - ${q.id}: ${q.question}`);
+      lines.push(`    Answer: ${q.resolution}`);
+    }
+  }
+
   if (record.scopeOut.length > 0) {
     lines.push("\nOut of Scope:");
     for (const item of record.scopeOut) {

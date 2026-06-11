@@ -103,6 +103,7 @@ export interface Project {
   stagedPrinciplesInput?: string;
   sessionLog?: SessionLogEntry[];
   engagementRecord?: EngagementRecord;
+  resolvedSinceLastCps?: number;
   createdAt: string;
 }
 

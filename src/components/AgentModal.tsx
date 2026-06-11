@@ -10,8 +10,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAgents } from "@/context/AgentsContext";
-import { formatOutput } from "@/lib/formatters";
-import { PREVIOUS_AGENT, FALLBACK_AGENT, SECONDARY_AGENT, CONTEXT_AGENTS } from "@/lib/agents";
+import { formatOutput, extractCurrentVersion, bumpMinorVersion } from "@/lib/formatters";
+import { PREVIOUS_AGENT, FALLBACK_AGENT, SECONDARY_AGENT, CONTEXT_AGENTS, LIVING_DOC_AGENTS } from "@/lib/agents";
 import { MdEditor } from "@/components/MdEditor";
 import { DocEditorPanel } from "@/components/DocEditorPanel";
 import { SaveToDriveDialog } from "@/components/SaveToDriveDialog";
@@ -304,6 +304,20 @@ export function AgentModal({ agentId, onClose, prefilledInput }: AgentModalProps
       // For principles: just show the staged session notes — previous output is injected silently by runAgent
       if (agentId === "principles") {
         defaultInput = stagedPrinciplesInput?.trim() ?? "";
+      } else if (agentId && LIVING_DOC_AGENTS.has(agentId) && agent?.output) {
+        // Living doc re-run: compose own previous version + latest upstream so agent
+        // always sees fresh upstream context (lastInput would be stale here)
+        const prevId = PREVIOUS_AGENT[agentId];
+        const upstream = prevId ? agents[prevId] : null;
+        if (upstream?.output) {
+          defaultInput = `[${upstream.name.toUpperCase()} — latest]\n${upstream.output}\n\n---\n\n[${agent.name.toUpperCase()} — previous version]\n${agent.output}`;
+        } else {
+          defaultInput = agent.output;
+        }
+        const currentVer = extractCurrentVersion(agent.output);
+        if (currentVer) {
+          defaultInput += `\n\n---\n\n[VERSION CONTROL: Current version is ${currentVer}. Please increment to ${bumpMinorVersion(currentVer)} in your response.]`;
+        }
       // Restore last typed input if available
       } else if (agent?.lastInput) {
         defaultInput = agent.lastInput;

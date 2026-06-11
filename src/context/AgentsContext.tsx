@@ -148,6 +148,7 @@ interface AgentsCtx {
   // engagement record
   engagementRecord: EngagementRecord;
   updateEngagementRecord: (patch: Partial<EngagementRecord>) => void;
+  resolvedSinceLastCps: number;
 }
 
 const AgentsContext = createContext<AgentsCtx | null>(null);
@@ -330,6 +331,11 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
+        // Reset resolved-OQ nudge counter when CPS completes
+        if (agentId === "cps" && agentPatch.status === "done") {
+          updated.resolvedSinceLastCps = 0;
+        }
+
         // Engagement record: auto-fill from summarise, cps, prd outputs
         if (["summarise", "cps", "prd"].includes(agentId) && agentPatch.status === "done" && agentPatch.output) {
           const currentER: EngagementRecord = updated.engagementRecord ?? {
@@ -389,23 +395,37 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
 
   const updateEngagementRecord = useCallback(
     (patch: Partial<EngagementRecord>) => {
-      patchProject((p) => ({
-        ...p,
-        engagementRecord: {
-          clientBackground: "",
-          industry: "",
-          regulatoryContext: "",
-          projectBrief: "",
-          targetGoLive: "",
-          scopeOut: [],
-          stakeholders: [],
-          decisions: [],
-          openQuestions: [],
-          ...(p.engagementRecord ?? {}),
-          ...patch,
-          updatedAt: new Date().toISOString(),
-        },
-      }));
+      patchProject((p) => {
+        let newlyResolved = 0;
+        if (patch.openQuestions && p.engagementRecord?.openQuestions) {
+          const prevResolved = new Set(
+            p.engagementRecord.openQuestions
+              .filter((q) => q.status === "resolved")
+              .map((q) => q.id)
+          );
+          newlyResolved = patch.openQuestions.filter(
+            (q) => q.status === "resolved" && !prevResolved.has(q.id)
+          ).length;
+        }
+        return {
+          ...p,
+          resolvedSinceLastCps: (p.resolvedSinceLastCps ?? 0) + newlyResolved,
+          engagementRecord: {
+            clientBackground: "",
+            industry: "",
+            regulatoryContext: "",
+            projectBrief: "",
+            targetGoLive: "",
+            scopeOut: [],
+            stakeholders: [],
+            decisions: [],
+            openQuestions: [],
+            ...(p.engagementRecord ?? {}),
+            ...patch,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      });
     },
     [patchProject]
   );
@@ -841,6 +861,7 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
           updatedAt: "",
         },
         updateEngagementRecord,
+        resolvedSinceLastCps: currentProject.resolvedSinceLastCps ?? 0,
       }}
     >
       {children}

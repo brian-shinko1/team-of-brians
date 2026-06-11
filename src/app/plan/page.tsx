@@ -7,7 +7,6 @@ import { PHASE_COLORS } from "@/lib/agents";
 import { AgentCard } from "@/components/AgentCard";
 import { AgentModal } from "@/components/AgentModal";
 import { MeetingCopilotModal } from "@/components/MeetingCopilotModal";
-import { JarvisModal } from "@/components/JarvisModal";
 import { PipelineCard } from "@/components/PipelineCard";
 import { PipelineStrip } from "@/components/PipelineStrip";
 import { EngagementRecordPanel } from "@/components/EngagementRecordPanel";
@@ -58,18 +57,17 @@ export default function PlanPage() {
           entryId="meeting_copilot"
           onOpen={setModalId}
         />
-        {["cps", "prd", "jarvis"].map((id) => {
+        {["cps", "prd"].map((id) => {
           const agent = agents[id];
           if (!agent) return null;
           return <AgentCard key={id} agent={agent} onOpen={setModalId} onRun={runAgent} />;
         })}
       </div>
-      <JarvisModal open={modalId === "jarvis"} onClose={() => setModalId(null)} />
       {modalId === "meeting_copilot" ? (
         <MeetingCopilotModal open onClose={() => setModalId(null)} />
-      ) : modalId !== "jarvis" ? (
+      ) : (
         <AgentModal agentId={modalId} onClose={() => setModalId(null)} />
-      ) : null}
+      )}
     </div>
   );
 }

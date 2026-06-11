@@ -1150,12 +1150,37 @@ export function extractSessionHeadline(raw: string): string {
 
 import type { EngagementDecision, EngagementRecord, OpenQuestion, Stakeholder, SessionLogEntry } from "./types";
 
+// ── Version helpers ───────────────────────────────────────────────────────────
+
+export function extractCurrentVersion(output: string): string | null {
+  try {
+    const d = JSON.parse(output);
+    return d?.meta?.version ?? d?.meta?.prd_version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function bumpMinorVersion(v: string): string {
+  const parts = v.split(".");
+  const minor = parseInt(parts[parts.length - 1], 10);
+  if (isNaN(minor)) return v;
+  parts[parts.length - 1] = String(minor + 1);
+  return parts.join(".");
+}
+
 // ── Engagement record auto-extraction ────────────────────────────────────────
 
 function erNextId(prefix: string, existing: { id: string }[]): string {
   const nums = existing.map((x) => parseInt(x.id.replace(`${prefix}-`, ""), 10)).filter((n) => !isNaN(n));
   const next = nums.length > 0 ? Math.max(...nums) + 1 : 1;
   return `${prefix}-${String(next).padStart(3, "0")}`;
+}
+
+// Strips [PRIORITY] and ID: prefixes that the ER serializer adds, so dedup
+// catches questions that CPS/PRD echo back in their formatted output.
+function normalizeQuestion(q: string): string {
+  return q.replace(/^\[.*?\]\s*/i, "").replace(/^[A-Z]+-\d+:\s*/i, "").trim().toLowerCase();
 }
 
 /**
@@ -1210,6 +1235,7 @@ export function extractEngagementFromAgent(
 
       // Stakeholders from CPS context
       if (d.context?.stakeholders?.length) {
+        const orgName = d.meta?.client ?? d.context?.organisation?.split("\n")[0] ?? "";
         const base = patch.stakeholders ?? current.stakeholders;
         const existingNames = new Set(base.map((s) => s.name.toLowerCase()));
         const added: Stakeholder[] = d.context.stakeholders
@@ -1217,7 +1243,7 @@ export function extractEngagementFromAgent(
           .map((s) => ({
             id: `sh-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
             name: s.name,
-            organisation: patch.clientBackground ?? current.clientBackground ?? "",
+            organisation: orgName,
             role: s.role ?? "",
             contact: "",
           }));
@@ -1227,9 +1253,9 @@ export function extractEngagementFromAgent(
       // Open questions from ideation
       if (d.ideation?.open_questions?.length) {
         const base = patch.openQuestions ?? current.openQuestions;
-        const existing = new Set(base.map((q) => q.question.toLowerCase()));
+        const existing = new Set(base.map((q) => normalizeQuestion(q.question)));
         const added: OpenQuestion[] = d.ideation.open_questions
-          .filter((q) => q && !existing.has(q.toLowerCase()))
+          .filter((q) => q && !existing.has(normalizeQuestion(q)))
           .reduce<OpenQuestion[]>((acc, q) => {
             acc.push({
               id: erNextId("OQ", [...base, ...acc]),
@@ -1291,9 +1317,9 @@ export function extractEngagementFromAgent(
         const flagged = d.functional_requirements.filter((r) => r.flagged_for_clarification);
         if (flagged.length) {
           const base = patch.openQuestions ?? current.openQuestions;
-          const existing = new Set(base.map((q) => q.question.toLowerCase()));
+          const existing = new Set(base.map((q) => normalizeQuestion(q.question)));
           const added: OpenQuestion[] = flagged
-            .filter((r) => !existing.has(r.flagged_for_clarification!.toLowerCase()))
+            .filter((r) => !existing.has(normalizeQuestion(r.flagged_for_clarification!)))
             .reduce<OpenQuestion[]>((acc, r) => {
               acc.push({
                 id: erNextId("OQ", [...base, ...acc]),
