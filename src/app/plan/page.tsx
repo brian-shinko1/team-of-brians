@@ -10,6 +10,7 @@ import { MeetingCopilotModal } from "@/components/MeetingCopilotModal";
 import { JarvisModal } from "@/components/JarvisModal";
 import { PipelineCard } from "@/components/PipelineCard";
 import { PipelineStrip } from "@/components/PipelineStrip";
+import { EngagementRecordPanel } from "@/components/EngagementRecordPanel";
 
 const COLOR = PHASE_COLORS.Plan;
 
@@ -47,6 +48,7 @@ export default function PlanPage() {
         { num: "Step 4", name: "PRD", sub: "Living product requirements" },
         { num: "Output", name: "Plan Docs", sub: "Feeds Design phase" },
       ]} />
+      <EngagementRecordPanel />
       <p className="text-[12px] font-semibold mb-2.5">Agents</p>
       <div className="grid grid-cols-3 gap-2.5 items-start">
         <PipelineCard
