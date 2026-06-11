@@ -3,17 +3,22 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useAgents } from "@/context/AgentsContext";
+import { PROFILE_ACTIVE_PHASES } from "@/lib/agents";
 
 const phases = [
   { href: "/plan", label: "Plan", num: "01", color: "#5C4EE5" },
   { href: "/design", label: "Design", num: "02", color: "#0F6E56" },
   { href: "/architecture", label: "Architecture", num: "03", color: "#9B3D1E" },
-  { href: "/build", label: "Build", num: "04", color: "#1A56DB" },
-  { href: "/eval", label: "Eval", num: "05", color: "#6B21A8" },
+  { href: "/review", label: "Review", num: "04", color: "#0891B2" },
+  { href: "/build", label: "Build", num: "05", color: "#1A56DB" },
+  { href: "/eval", label: "Eval", num: "06", color: "#6B21A8" },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { settings } = useAgents();
+  const activePhases = PROFILE_ACTIVE_PHASES[settings.pipelineProfile ?? "standard"];
 
   return (
     <aside className="fixed top-[52px] left-0 bottom-0 w-[216px] bg-white border-r border-zinc-100 px-2.5 py-3.5 overflow-y-auto z-40 flex flex-col gap-0.5">
@@ -36,21 +41,28 @@ export function Sidebar() {
         Phases
       </p>
 
-      {phases.map((p) => (
-        <NavItem key={p.href} href={p.href} active={pathname === p.href}>
-          <span
-            className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-            style={{ background: p.color }}
-          />
-          {p.label}
-          <span
-            className="ml-auto text-[9px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded border"
-            style={{ color: p.color, borderColor: p.color }}
-          >
-            {p.num}
-          </span>
-        </NavItem>
-      ))}
+      {phases.map((p) => {
+        const isActive = activePhases.has(p.label);
+        return (
+          <NavItem key={p.href} href={p.href} active={pathname === p.href}>
+            <span
+              className="w-1.5 h-1.5 rounded-full flex-shrink-0 transition-opacity"
+              style={{ background: isActive ? p.color : "#d4d4d8" }}
+            />
+            <span className={isActive ? "" : "text-zinc-400"}>{p.label}</span>
+            {isActive ? (
+              <span
+                className="ml-auto text-[9px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded border"
+                style={{ color: p.color, borderColor: p.color }}
+              >
+                {p.num}
+              </span>
+            ) : (
+              <span className="ml-auto text-[9px] text-zinc-300 font-medium">skip</span>
+            )}
+          </NavItem>
+        );
+      })}
 
       <p className="text-[10px] font-semibold tracking-widest text-zinc-400 uppercase px-2 mt-6 mb-1">
         System

@@ -32,7 +32,7 @@ export default function EvalPage() {
         </div>
         <span className="text-[10px] font-semibold tracking-widest uppercase px-2.5 py-1 rounded border mt-1 shrink-0"
           style={{ color: "#6B21A8", borderColor: "#6B21A8" }}>
-          Phase 05
+          Phase 06
         </span>
       </div>
 

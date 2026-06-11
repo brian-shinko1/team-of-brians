@@ -304,7 +304,7 @@ export default function BuildPage() {
           <p className="text-[12px] text-zinc-400 mt-1">Ticket management · handover doc</p>
         </div>
         <span className="text-[10px] font-semibold tracking-widest uppercase px-2.5 py-1 rounded border mt-1 shrink-0"
-          style={{ color: COLOR, borderColor: COLOR }}>Phase 04</span>
+          style={{ color: COLOR, borderColor: COLOR }}>Phase 05</span>
       </div>
 
       {/* Stats */}
