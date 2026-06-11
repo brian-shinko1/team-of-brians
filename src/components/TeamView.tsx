@@ -806,14 +806,21 @@ export function TeamView() {
                   {/* invisible hit area */}
                   <ellipse cx={x} cy={feetY - 14} rx={16} ry={22} fill="transparent" />
 
-                  {/* name — katanas render their own label */}
-                  {!isKatana && (
-                    <text x={x} y={nameY}
-                      textAnchor="middle" fontSize={8} fontFamily="monospace" fontWeight="700"
-                      fill="#0f172a">
-                      {shortName}
-                    </text>
-                  )}
+                  {/* name badge — pill behind text for legibility on any floor */}
+                  {!isKatana && (() => {
+                    const bw = shortName.length * 4.6 + 10;
+                    return (
+                      <>
+                        <rect x={x - bw / 2} y={nameY - 8} width={bw} height={11}
+                          rx={3} fill="white" opacity={0.82} />
+                        <text x={x} y={nameY}
+                          textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight="700"
+                          fill="#292524">
+                          {shortName}
+                        </text>
+                      </>
+                    );
+                  })()}
 
                   {/* output dot */}
                   {hasOutput && (
