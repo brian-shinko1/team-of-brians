@@ -5,17 +5,18 @@ import Link from "next/link";
 import { useAgents } from "@/context/AgentsContext";
 import { AgentModal } from "@/components/AgentModal";
 import { FeedItem } from "@/components/FeedItem";
-import { PHASE_COLORS } from "@/lib/agents";
+import { PHASE_COLORS, PROFILE_ACTIVE_PHASES } from "@/lib/agents";
 
 const PHASES = [
   { key: "Plan", href: "/plan", agents: 5 },
   { key: "Design", href: "/design", agents: 3 },
   { key: "Architecture", href: "/architecture", agents: 3 },
+  { key: "Review", href: "/review", agents: 2 },
   { key: "Build", href: "/build", agents: 1 },
   { key: "Eval", href: "/eval", agents: 1 },
 ] as const;
 
-const PHASE_ORDER = ["Plan", "Design", "Architecture", "Build", "Eval"] as const;
+const PHASE_ORDER = ["Plan", "Design", "Architecture", "Review", "Build", "Eval"] as const;
 
 function deriveActiveStage(agents: Record<string, import("@/lib/types").Agent>): string {
   const agentList = Object.values(agents);
@@ -34,7 +35,8 @@ function deriveActiveStage(agents: Record<string, import("@/lib/types").Agent>):
 }
 
 export default function OverviewPage() {
-  const { feed, agents, runAgent } = useAgents();
+  const { feed, agents, runAgent, settings } = useAgents();
+  const activePhases = PROFILE_ACTIVE_PHASES[settings.pipelineProfile ?? "standard"];
   const [modalId, setModalId] = useState<string | null>(null);
 
   const agentList = Object.values(agents);
@@ -70,31 +72,38 @@ export default function OverviewPage() {
       </div>
 
       {/* Phase cards */}
-      <div className="grid grid-cols-5 gap-2.5 mb-6">
-        {PHASES.map((p) => (
-          <Link
-            key={p.key}
-            href={p.href}
-            className="border border-zinc-200 rounded-lg p-4 hover:border-zinc-300 hover:shadow-sm transition-all relative overflow-hidden group"
-          >
-            <div
-              className="absolute top-0 left-0 w-[3px] h-full"
-              style={{ background: PHASE_COLORS[p.key] }}
-            />
-            <p
-              className="text-[9px] font-bold tracking-[0.1em] uppercase mb-2.5"
-              style={{ color: PHASE_COLORS[p.key] }}
+      <div className="grid grid-cols-6 gap-2.5 mb-6">
+        {PHASES.map((p) => {
+          const isActive = activePhases.has(p.key);
+          return (
+            <Link
+              key={p.key}
+              href={p.href}
+              className={`border rounded-lg p-4 transition-all relative overflow-hidden group ${
+                isActive
+                  ? "border-zinc-200 hover:border-zinc-300 hover:shadow-sm"
+                  : "border-zinc-100 opacity-40 cursor-default pointer-events-none"
+              }`}
             >
-              {p.key}
-            </p>
-            <p className="text-[26px] font-semibold tracking-tight leading-none mb-1">
-              {p.agents}
-            </p>
-            <p className="text-[11px] text-zinc-400">
-              {p.agents === 1 ? "agent" : "agents"}
-            </p>
-          </Link>
-        ))}
+              <div
+                className="absolute top-0 left-0 w-[3px] h-full"
+                style={{ background: isActive ? PHASE_COLORS[p.key] : "#e4e4e7" }}
+              />
+              <p
+                className="text-[9px] font-bold tracking-[0.1em] uppercase mb-2.5"
+                style={{ color: isActive ? PHASE_COLORS[p.key] : "#a1a1aa" }}
+              >
+                {p.key}
+              </p>
+              <p className="text-[26px] font-semibold tracking-tight leading-none mb-1">
+                {isActive ? p.agents : "—"}
+              </p>
+              <p className="text-[11px] text-zinc-400">
+                {isActive ? (p.agents === 1 ? "agent" : "agents") : "skipped"}
+              </p>
+            </Link>
+          );
+        })}
       </div>
 
       {/* Stats */}

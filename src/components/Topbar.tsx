@@ -7,6 +7,8 @@ import { useAgents } from "@/context/AgentsContext";
 import { GlobalQueryPanel } from "@/components/GlobalQueryPanel";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { useActionItems } from "@/context/ActionItemsContext";
+import { PROFILE_LABELS, PROFILE_DESCRIPTIONS } from "@/lib/agents";
+import type { PipelineProfile } from "@/lib/types";
 
 export function Topbar() {
   const {
@@ -19,6 +21,8 @@ export function Topbar() {
     addProject,
     removeProject,
     scaffoldProject,
+    settings,
+    updateSettings,
   } = useAgents();
 
   const { items } = useActionItems();
@@ -234,6 +238,38 @@ export function Topbar() {
 
       {/* Right side */}
       <div className="ml-auto flex items-center gap-2.5">
+        {/* Pipeline profile selector */}
+        <div className="flex items-center border border-zinc-200 rounded-md overflow-hidden h-[30px]">
+          {(["quick", "standard", "full"] as PipelineProfile[]).map((p) => (
+            <button
+              key={p}
+              onClick={() => updateSettings({ pipelineProfile: p })}
+              title={PROFILE_DESCRIPTIONS[p]}
+              className={`px-2.5 h-full text-[11px] font-medium border-r border-zinc-200 last:border-r-0 transition-colors ${
+                (settings.pipelineProfile ?? "standard") === p
+                  ? "bg-zinc-900 text-white"
+                  : "text-zinc-500 hover:bg-zinc-50"
+              }`}
+            >
+              {PROFILE_LABELS[p]}
+            </button>
+          ))}
+        </div>
+
+        {/* Auto-chain toggle — always visible, one click to enable/disable */}
+        <button
+          onClick={() => updateSettings({ autoChain: !settings.autoChain })}
+          title={settings.autoChain ? "Auto-chain ON — agents pass work automatically. Click to disable." : "Auto-chain OFF — each agent runs manually. Click to enable."}
+          className={`h-[30px] px-3 border rounded-md flex items-center gap-1.5 text-[11px] font-medium transition-colors ${
+            settings.autoChain
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+              : "border-zinc-200 text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600"
+          }`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${settings.autoChain ? "bg-emerald-500" : "bg-zinc-300"}`} />
+          Auto-chain
+        </button>
+
         <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
           AIRIA connected

@@ -1,9 +1,9 @@
 "use client";
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { Agent, BuildItem, Client, ClientSettings, DriveFolders, FeedItem, Project, Ticket, TicketAuditEntry, TicketType, TicketPriority } from "@/lib/types";
-import { DEMO_CLIENTS, INITIAL_AGENTS, makeClient, makeProject, NEXT_AGENT, HITL_AGENTS, CONTEXT_AGENTS, FROZEN_AGENTS, compressEventStorm } from "@/lib/agents";
-import { formatOutput, extractSessionHeadline } from "@/lib/formatters";
+import { Agent, BuildItem, Client, ClientSettings, DriveFolders, EngagementRecord, FeedItem, Project, Ticket, TicketAuditEntry, TicketType, TicketPriority } from "@/lib/types";
+import { DEMO_CLIENTS, ENGAGEMENT_RECORD_AGENTS, INITIAL_AGENTS, makeClient, makeProject, NEXT_AGENT, PREVIOUS_AGENT, FALLBACK_AGENT, HITL_AGENTS, CONTEXT_AGENTS, FROZEN_AGENTS, PROFILE_BYPASS, compressEventStorm, serializeEngagementRecord } from "@/lib/agents";
+import { formatOutput, extractSessionHeadline, extractEngagementFromAgent } from "@/lib/formatters";
 
 const STORAGE_KEY = "shinko1_clients";
 const SELECTION_KEY = "shinko1_selection";
@@ -45,7 +45,14 @@ function loadClients(): Client[] {
         for (const a of INITIAL_AGENTS) {
           if (!patched[a.id]) patched[a.id] = { ...a };
         }
-        return { ...p, agents: patched };
+        return {
+          ...p,
+          agents: patched,
+          settings: {
+            ...p.settings,
+            pipelineProfile: p.settings.pipelineProfile ?? "standard",
+          },
+        };
       }),
     }));
   } catch {
@@ -119,6 +126,10 @@ interface AgentsCtx {
   updateSessionNotes: (notes: string) => void;
   saveSessionNotes: () => void;
   clearSessionNotes: () => void;
+
+  // engagement record
+  engagementRecord: EngagementRecord;
+  updateEngagementRecord: (patch: Partial<EngagementRecord>) => void;
 }
 
 const AgentsContext = createContext<AgentsCtx | null>(null);
@@ -300,6 +311,24 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
             updated.sessionLog = [...(p.sessionLog ?? []), entry];
           }
         }
+
+        // Engagement record: auto-fill from summarise, cps, prd outputs
+        if (["summarise", "cps", "prd"].includes(agentId) && agentPatch.status === "done" && agentPatch.output) {
+          const currentER: EngagementRecord = updated.engagementRecord ?? {
+            clientBackground: "", industry: "", regulatoryContext: "",
+            projectBrief: "", targetGoLive: "", scopeOut: [],
+            stakeholders: [], decisions: [], openQuestions: [], updatedAt: "",
+          };
+          const extracted = extractEngagementFromAgent(agentId, agentPatch.output, currentER);
+          if (extracted) {
+            updated.engagementRecord = {
+              ...currentER,
+              ...extracted,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+        }
+
         return updated;
       });
     },
@@ -337,6 +366,29 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
 
   const clearSessionNotes = useCallback(
     () => patchProject((p) => ({ ...p, sessionNotes: "" })),
+    [patchProject]
+  );
+
+  const updateEngagementRecord = useCallback(
+    (patch: Partial<EngagementRecord>) => {
+      patchProject((p) => ({
+        ...p,
+        engagementRecord: {
+          clientBackground: "",
+          industry: "",
+          regulatoryContext: "",
+          projectBrief: "",
+          targetGoLive: "",
+          scopeOut: [],
+          stakeholders: [],
+          decisions: [],
+          openQuestions: [],
+          ...(p.engagementRecord ?? {}),
+          ...patch,
+          updatedAt: new Date().toISOString(),
+        },
+      }));
+    },
     [patchProject]
   );
 
@@ -517,7 +569,7 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const closeModal = useCallback(() => setPendingModal(null), []);
 
-  const runAgentRef = useRef<((agentId: string, input?: string) => Promise<void>) | undefined>(undefined);
+  const runAgentRef = useRef<((agentId: string, input?: string, contextAlreadyInjected?: boolean) => Promise<void>) | undefined>(undefined);
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
 
   const cancelAgent = useCallback((agentId: string) => {
@@ -555,7 +607,12 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
         // Inject CONTEXT_AGENTS outputs for manual runs (auto-chain builds this itself)
         let finalInput = input;
         if (!_contextAlreadyInjected) {
-          const contextIds = CONTEXT_AGENTS[agentId] ?? [];
+          // Determine effective input source so we don't inject it as context too (duplicate)
+          const primarySrc = PREVIOUS_AGENT[agentId];
+          const effectiveSrc = primarySrc && currentProject.agents[primarySrc]?.output
+            ? primarySrc
+            : FALLBACK_AGENT[agentId];
+          const contextIds = (CONTEXT_AGENTS[agentId] ?? []).filter((id) => id !== effectiveSrc);
           const contextParts = contextIds
             .map((ctxId) => {
               const ctxOutput = currentProject.agents[ctxId]?.output;
@@ -567,6 +624,14 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
 
           if (contextParts.length > 0) {
             finalInput = [...contextParts, input].join("\n\n---\n\n");
+          }
+        }
+
+        // Inject engagement record for relevant agents (always, regardless of auto-chain)
+        if (ENGAGEMENT_RECORD_AGENTS.has(agentId)) {
+          const er = currentProject.engagementRecord;
+          if (er && (er.clientBackground || er.projectBrief || er.stakeholders.length > 0 || er.decisions.length > 0)) {
+            finalInput = `${serializeEngagementRecord(er)}\n\n---\n\n${finalInput}`;
           }
         }
 
@@ -591,7 +656,10 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
 
         // Auto-chain to next agent
         if (currentProject.settings.autoChain) {
-          const nextId = NEXT_AGENT[agentId];
+          // Walk NEXT_AGENT until we find an agent not bypassed by the current profile
+          const bypass = PROFILE_BYPASS[currentProject.settings.pipelineProfile ?? "standard"];
+          let nextId = NEXT_AGENT[agentId];
+          while (nextId && bypass.has(nextId)) nextId = NEXT_AGENT[nextId];
           if (nextId) {
             try {
               // If the next agent is frozen (one-shot) and already has output, skip it
@@ -599,7 +667,9 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
               const targetId = isFrozenSkip ? (NEXT_AGENT[nextId] ?? nextId) : nextId;
 
               // Build context-enriched input for the target agent
-              const contextIds = CONTEXT_AGENTS[targetId] ?? [];
+              // Exclude the agent whose output is used as direct input — it would be a duplicate
+              const directSourceId = isFrozenSkip ? targetId : agentId;
+              const contextIds = (CONTEXT_AGENTS[targetId] ?? []).filter((id) => id !== directSourceId);
               const contextParts = contextIds
                 .map((ctxId) => {
                   const ctxOutput = currentProject.agents[ctxId]?.output;
@@ -740,6 +810,19 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
         updateSessionNotes,
         saveSessionNotes,
         clearSessionNotes,
+        engagementRecord: currentProject.engagementRecord ?? {
+          clientBackground: "",
+          industry: "",
+          regulatoryContext: "",
+          projectBrief: "",
+          targetGoLive: "",
+          scopeOut: [],
+          stakeholders: [],
+          decisions: [],
+          openQuestions: [],
+          updatedAt: "",
+        },
+        updateEngagementRecord,
       }}
     >
       {children}

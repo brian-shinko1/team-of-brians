@@ -1,6 +1,6 @@
 export type AgentStatus = "idle" | "running" | "done" | "error";
 
-export type Phase = "Plan" | "Design" | "Architecture" | "Build" | "Eval";
+export type Phase = "Plan" | "Design" | "Architecture" | "Review" | "Build" | "Eval";
 
 export type TicketStatus = "todo" | "wip" | "done" | "backlogged";
 export type TicketType = "Story" | "Task" | "Bug";
@@ -41,6 +41,7 @@ export interface Agent {
   lastRun: string | null;
   lastInput?: string;
   driveUrl?: string;
+  driveFileId?: string;
 }
 
 export interface FeedItem {
@@ -52,6 +53,8 @@ export interface FeedItem {
   content: string;
 }
 
+export type PipelineProfile = "quick" | "standard" | "full";
+
 export interface ClientSettings {
   airiaKey: string;
   airiaUrl: string;
@@ -60,6 +63,7 @@ export interface ClientSettings {
   autoChain: boolean;
   hitlAll: boolean;
   queryPipelineId: string | null;
+  pipelineProfile: PipelineProfile;
 }
 
 export interface DriveFolders {
@@ -98,6 +102,7 @@ export interface Project {
   savedSessionNotes?: { content: string; savedAt: string }[];
   stagedPrinciplesInput?: string;
   sessionLog?: SessionLogEntry[];
+  engagementRecord?: EngagementRecord;
   createdAt: string;
 }
 
@@ -123,4 +128,48 @@ export interface ActionItem {
 
 export interface GlobalSettings {
   _placeholder: true;
+}
+
+// ── Engagement Record ─────────────────────────────────────────────────────────
+
+export interface Stakeholder {
+  id: string;
+  name: string;
+  organisation: string;
+  role: string;
+  contact: string;
+}
+
+export interface EngagementDecision {
+  id: string;
+  decision: string;
+  rationale?: string;
+  source: string;
+  date: string;
+}
+
+export type OpenQuestionPriority = "blocking" | "high" | "medium" | "low";
+export type OpenQuestionStatus = "open" | "in_progress" | "resolved";
+
+export interface OpenQuestion {
+  id: string;
+  question: string;
+  owner: string;
+  status: OpenQuestionStatus;
+  resolution: string | null;
+  blocks: string;
+  priority: OpenQuestionPriority;
+}
+
+export interface EngagementRecord {
+  clientBackground: string;
+  industry: string;
+  regulatoryContext: string;
+  projectBrief: string;
+  targetGoLive: string;
+  scopeOut: string[];
+  stakeholders: Stakeholder[];
+  decisions: EngagementDecision[];
+  openQuestions: OpenQuestion[];
+  updatedAt: string;
 }

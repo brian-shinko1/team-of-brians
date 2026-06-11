@@ -15,6 +15,7 @@ import { PREVIOUS_AGENT, FALLBACK_AGENT, SECONDARY_AGENT, CONTEXT_AGENTS } from 
 import { MdEditor } from "@/components/MdEditor";
 import { DocEditorPanel } from "@/components/DocEditorPanel";
 import { SaveToDriveDialog } from "@/components/SaveToDriveDialog";
+import { LiveRecorder } from "@/components/LiveRecorder";
 
 interface AgentModalProps {
   agentId: string | null;
@@ -246,6 +247,7 @@ function MeetingInput({ onReady }: { onReady: (value: string) => void }) {
               </>
             )}
           </div>
+          <LiveRecorder onFile={(f) => { setAudioFile(f); setTranscript(null); }} />
           {audioFile && !transcript && (
             <button
               onClick={() => handleTranscribe(audioFile)}
@@ -271,7 +273,7 @@ function MeetingInput({ onReady }: { onReady: (value: string) => void }) {
 // ── Main modal ────────────────────────────────────────────────────────────────
 
 export function AgentModal({ agentId, onClose, prefilledInput }: AgentModalProps) {
-  const { agents, runAgent, runSTT, updateAgent, driveFolders, settings, stagedPrinciplesInput } = useAgents();
+  const { agents, runAgent, runSTT, updateAgent, driveFolders, settings, stagedPrinciplesInput, currentClient } = useAgents();
   const [input, setInput] = useState("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [principlesAudio, setPrinciplesAudio] = useState<File | null>(null);
@@ -435,6 +437,11 @@ export function AgentModal({ agentId, onClose, prefilledInput }: AgentModalProps
   const outputAgentId = isMeetingInput ? "summarise" : agentId;
   const formattedOutput = outputAgentId && outputAgent?.output ? formatOutput(outputAgentId, outputAgent.output) : "";
 
+  // For doc_agent Drive saves, append a formal sign-off section for both parties
+  const driveContent = outputAgentId === "doc_agent" && formattedOutput
+    ? formattedOutput + `\n\n---\n\n## Sign-Off\n\nBy signing below, both parties confirm they have reviewed and agreed to this Definition Document.\n\n### Shinko1\n\n| | |\n|---|---|\n| **Name** | |\n| **Title** | |\n| **Signature** | |\n| **Date** | |\n\n### ${currentClient.name}\n\n| | |\n|---|---|\n| **Name** | |\n| **Title** | |\n| **Signature** | |\n| **Date** | |\n`
+    : formattedOutput;
+
   const driveFileName = outputAgent ? `${outputAgent.name}-${new Date().toISOString().slice(0, 10)}.md` : "";
   const driveFolderId = outputAgentId && outputAgent
     ? (driveFolders?.subfolders[outputAgentId] ?? driveFolders?.phases[outputAgent.phase] ?? undefined)
@@ -543,41 +550,44 @@ export function AgentModal({ agentId, onClose, prefilledInput }: AgentModalProps
                   {isMeetingInput ? (
                     <MeetingInput onReady={(value) => setInput(value)} />
                   ) : isSTT ? (
-                    <div
-                      className="border-2 border-dashed border-zinc-200 rounded-lg p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-zinc-300 hover:bg-zinc-50 transition-colors"
-                      onClick={() => fileInputRef.current?.click()}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        const file = e.dataTransfer.files[0];
-                        if (file) setAudioFile(file);
-                      }}
-                    >
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="audio/*,video/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
+                    <div className="flex flex-col gap-3">
+                      <div
+                        className="border-2 border-dashed border-zinc-200 rounded-lg p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-zinc-300 hover:bg-zinc-50 transition-colors"
+                        onClick={() => fileInputRef.current?.click()}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const file = e.dataTransfer.files[0];
                           if (file) setAudioFile(file);
                         }}
-                      />
-                      {audioFile ? (
-                        <>
-                          <span className="text-[20px]">🎙</span>
-                          <p className="text-[12px] font-medium text-zinc-800">{audioFile.name}</p>
-                          <p className="text-[11px] text-zinc-400">
-                            {(audioFile.size / 1024 / 1024).toFixed(1)} MB · click to change
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <span className="text-[20px]">🎙</span>
-                          <p className="text-[12px] text-zinc-500">Drop an audio file or click to browse</p>
-                          <p className="text-[11px] text-zinc-400">mp3 · mp4 · wav · m4a · webm · ogg</p>
-                        </>
-                      )}
+                      >
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="audio/*,video/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) setAudioFile(file);
+                          }}
+                        />
+                        {audioFile ? (
+                          <>
+                            <span className="text-[20px]">🎙</span>
+                            <p className="text-[12px] font-medium text-zinc-800">{audioFile.name}</p>
+                            <p className="text-[11px] text-zinc-400">
+                              {(audioFile.size / 1024 / 1024).toFixed(1)} MB · click to change
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-[20px]">🎙</span>
+                            <p className="text-[12px] text-zinc-500">Drop an audio file or click to browse</p>
+                            <p className="text-[11px] text-zinc-400">mp3 · mp4 · wav · m4a · webm · ogg</p>
+                          </>
+                        )}
+                      </div>
+                      <LiveRecorder onFile={(f) => setAudioFile(f)} />
                     </div>
                   ) : (
                     <>
@@ -621,6 +631,7 @@ export function AgentModal({ agentId, onClose, prefilledInput }: AgentModalProps
                               </>
                             )}
                           </div>
+                          <LiveRecorder onFile={(f) => setPrinciplesAudio(f)} />
                         </div>
                       )}
                       {isEventStorm && (
@@ -790,11 +801,13 @@ export function AgentModal({ agentId, onClose, prefilledInput }: AgentModalProps
 
       {saveDriveOpen && outputAgentId && outputAgent && (
         <SaveToDriveDialog
-          content={formattedOutput}
+          content={driveContent}
           defaultFileName={driveFileName}
           folderId={driveFolderId}
+          fileId={outputAgent.driveFileId}
+          agentId={outputAgentId}
           onClose={() => setSaveDriveOpen(false)}
-          onSaved={(url) => { updateAgent(outputAgentId, { driveUrl: url }); setSaveDriveOpen(false); }}
+          onSaved={(url, id) => { updateAgent(outputAgentId, { driveUrl: url, driveFileId: id }); setSaveDriveOpen(false); }}
         />
       )}
     </>

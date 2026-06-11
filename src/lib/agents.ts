@@ -1,4 +1,4 @@
-import { Agent, Client, Project } from "./types";
+import { Agent, Client, EngagementRecord, PipelineProfile, Project } from "./types";
 
 // Compresses the full event storm JSON into a compact domain vocabulary summary.
 // Used when injecting event storm as frozen context into downstream agents,
@@ -49,9 +49,20 @@ export const PHASE_COLORS: Record<string, string> = {
   Plan: "#5C4EE5",
   Design: "#0F6E56",
   Architecture: "#9B3D1E",
+  Review: "#0891B2",
   Build: "#1A56DB",
   Eval: "#6B21A8",
 };
+
+// Agents whose Drive file is updated in-place (one living doc per project).
+// All others always create a new versioned file on each save.
+export const LIVING_DOC_AGENTS = new Set([
+  "cps",
+  "prd",
+  "architecture",
+  "domain_model",
+  "principles",
+]);
 
 const e = process.env;
 
@@ -206,6 +217,30 @@ export const INITIAL_AGENTS: Agent[] = [
     lastRun: null,
   },
 
+  // ── Review ───────────────────────────────────────────────────────────────
+  {
+    id: "security_agent",
+    name: "Security Agent",
+    desc: "Inherit · configure · gap — security posture review",
+    phase: "Review",
+    phaseColor: PHASE_COLORS.Review,
+    pipelineId: e.NEXT_PUBLIC_PIPELINE_SECURITY || null,
+    output: "",
+    status: "idle",
+    lastRun: null,
+  },
+  {
+    id: "doc_agent",
+    name: "Doc Agent",
+    desc: "Fills the definition template — pre-build definition doc for sign-off",
+    phase: "Review",
+    phaseColor: PHASE_COLORS.Review,
+    pipelineId: e.NEXT_PUBLIC_PIPELINE_DOCS || null,
+    output: "",
+    status: "idle",
+    lastRun: null,
+  },
+
   // ── Build ─────────────────────────────────────────────────────────────────
   {
     id: "pm_agent",
@@ -246,8 +281,7 @@ export const INITIAL_AGENTS: Agent[] = [
 
 // Auto-chain: maps each agent to the next one in the pipeline
 export const NEXT_AGENT: Record<string, string> = {
-  meeting_input:    "meeting_copilot",
-  meeting_copilot:  "summarise",
+  meeting_input:    "summarise",
   stt:              "summarise",
   summarise:     "cps",
   cps:           "prd",
@@ -256,9 +290,11 @@ export const NEXT_AGENT: Record<string, string> = {
   principles:    "domain_model",
   domain_model:  "architecture",
   architecture:  "spec",
-  spec:          "agents_md",
-  agents_md:     "reverse_doc",
-  reverse_doc:   "eval_agent",
+  spec:           "agents_md",
+  agents_md:      "security_agent",
+  security_agent: "doc_agent",
+  doc_agent:      "reverse_doc",
+  reverse_doc:    "eval_agent",
 };
 
 // Agents that require human approval before auto-chaining to them
@@ -268,24 +304,27 @@ export const HITL_AGENTS = new Set([
   "prd",          // sign-off on CPS before generating PRD
   "event_storm",  // Plan → Design phase boundary
   "principles",   // session-notes agent — runs deliberately, not automatically
-  "architecture", // Design → Architecture phase boundary
-  "reverse_doc",  // Architecture → Build phase boundary
-  "eval_agent",   // Build → Eval phase boundary
+  "architecture",   // Design → Architecture phase boundary
+  "security_agent", // Architecture → Review phase boundary
+  "reverse_doc",    // Review sign-off gate → Build phase boundary
+  "eval_agent",     // Build → Eval phase boundary
 ]);
 
 // Maps each agent to the one whose output it should consume
 export const PREVIOUS_AGENT: Record<string, string> = {
-  summarise:    "meeting_copilot",
+  summarise:    "meeting_input",
   cps:          "summarise",
   prd:          "cps",
   // principles has no PREVIOUS_AGENT — input comes from session notes
   domain_model: "principles",
   architecture: "domain_model",
   spec:         "architecture",
-  agents_md:    "spec",
-  pm_agent:     "prd",
-  reverse_doc:  "agents_md",
-  eval_agent:   "reverse_doc",
+  agents_md:      "spec",
+  security_agent: "agents_md",
+  doc_agent:      "security_agent",
+  pm_agent:       "prd",
+  reverse_doc:    "doc_agent",
+  eval_agent:     "reverse_doc",
 };
 
 // Secondary "use output" button — shown alongside the primary PREVIOUS_AGENT button
@@ -294,9 +333,11 @@ export const SECONDARY_AGENT: Record<string, string> = {
   domain_model: "prd",
 };
 
-// Fallback chain for summarise: if stt has no output, use meeting_input
+// Fallback chain: if the primary PREVIOUS_AGENT has no output, use this instead.
+// security_agent normally reads agents_md — in Quick mode (Architecture bypassed),
+// it falls back to prd, which is the best available description of what's being built.
 export const FALLBACK_AGENT: Record<string, string> = {
-  summarise: "meeting_input",
+  security_agent: "prd",
 };
 
 // Additional context agents: outputs injected alongside the direct chain input
@@ -305,13 +346,46 @@ export const CONTEXT_AGENTS: Record<string, string[]> = {
   // principles takes no frozen context — session notes are the source of truth
   domain_model: ["event_storm", "prd"],
   architecture: ["event_storm", "principles"],
-  spec:         ["domain_model", "principles"],
-  agents_md:    ["architecture", "domain_model", "principles"],
-  pm_agent:     ["spec", "agents_md"],
+  spec:           ["domain_model", "principles"],
+  agents_md:      ["architecture", "domain_model", "principles"],
+  security_agent: ["cps", "prd"],   // customer context from Plan alongside agents_md input
+  doc_agent:      ["agents_md", "prd"],  // agents_md in Standard/Full; prd fallback in Quick when agents_md is empty
+  pm_agent:       ["spec", "agents_md"],
 };
 
 // Agents that run once and should be skipped in auto-chain if they already have output
 export const FROZEN_AGENTS = new Set(["event_storm"]);
+
+// ── Pipeline profiles ─────────────────────────────────────────────────────────
+// Each profile defines which agents are BYPASSED by auto-chain.
+// Bypassed agents are skipped over — the chain jumps to the next active agent.
+
+export const PROFILE_LABELS: Record<PipelineProfile, string> = {
+  quick:    "Quick",
+  standard: "Standard",
+  full:     "Full",
+};
+
+export const PROFILE_DESCRIPTIONS: Record<PipelineProfile, string> = {
+  quick:    "Plan → Review → Build → Eval — skips Design & Architecture, security always runs",
+  standard: "All 6 phases — full pipeline including security review",
+  full:     "All 6 phases with maximum oversight — enterprise / high-stakes delivery",
+};
+
+// Agents that auto-chain SKIPS for each profile.
+// Security (Review phase) is always active — never bypassed.
+export const PROFILE_BYPASS: Record<PipelineProfile, Set<string>> = {
+  quick:    new Set(["event_storm", "principles", "domain_model", "architecture", "spec", "agents_md"]),
+  standard: new Set(),
+  full:     new Set(),
+};
+
+// Which phases are active (not bypassed) for each profile
+export const PROFILE_ACTIVE_PHASES: Record<PipelineProfile, Set<string>> = {
+  quick:    new Set(["Plan", "Review", "Build", "Eval"]),
+  standard: new Set(["Plan", "Design", "Architecture", "Review", "Build", "Eval"]),
+  full:     new Set(["Plan", "Design", "Architecture", "Review", "Build", "Eval"]),
+};
 
 export function makeProject(id: string, name: string): Project {
   return {
@@ -327,9 +401,59 @@ export function makeProject(id: string, name: string): Project {
       autoChain: true,
       hitlAll: false,
       queryPipelineId: e.NEXT_PUBLIC_PIPELINE_QUERY || null,
+      pipelineProfile: "standard",
     },
     createdAt: new Date().toISOString(),
   };
+}
+
+// Agents that receive the engagement record prepended to their input on every run
+export const ENGAGEMENT_RECORD_AGENTS = new Set(["summarise", "cps", "prd", "event_storm"]);
+
+export function serializeEngagementRecord(record: EngagementRecord): string {
+  const lines: string[] = ["[ENGAGEMENT RECORD — Project Context]"];
+
+  if (record.clientBackground) lines.push(`\nClient Background:\n${record.clientBackground}`);
+  if (record.industry) lines.push(`\nIndustry: ${record.industry}`);
+  if (record.regulatoryContext) lines.push(`Regulatory Context: ${record.regulatoryContext}`);
+  if (record.projectBrief) lines.push(`\nProject Brief:\n${record.projectBrief}`);
+  if (record.targetGoLive) lines.push(`\nTarget Go-Live: ${record.targetGoLive}`);
+
+  if (record.stakeholders.length > 0) {
+    lines.push("\nStakeholders:");
+    for (const s of record.stakeholders) {
+      const contact = s.contact ? ` · ${s.contact}` : "";
+      lines.push(`  - ${s.name} (${s.organisation}) — ${s.role}${contact}`);
+    }
+  }
+
+  if (record.decisions.length > 0) {
+    lines.push("\nConfirmed Decisions:");
+    for (const d of record.decisions) {
+      lines.push(`  - ${d.id}: ${d.decision}`);
+      if (d.rationale) lines.push(`    Rationale: ${d.rationale}`);
+      lines.push(`    Source: ${d.source} · ${d.date}`);
+    }
+  }
+
+  const unresolved = record.openQuestions.filter((q) => q.status !== "resolved");
+  if (unresolved.length > 0) {
+    lines.push("\nOpen Questions:");
+    for (const q of unresolved) {
+      const blocks = q.blocks ? ` · Blocks: ${q.blocks}` : "";
+      lines.push(`  - [${q.priority.toUpperCase()}] ${q.id}: ${q.question}`);
+      if (q.owner) lines.push(`    Owner: ${q.owner}${blocks}`);
+    }
+  }
+
+  if (record.scopeOut.length > 0) {
+    lines.push("\nOut of Scope:");
+    for (const item of record.scopeOut) {
+      lines.push(`  - ${item}`);
+    }
+  }
+
+  return lines.join("\n");
 }
 
 export function makeClient(id: string, name: string, firstProjectName = "Project 1"): Client {

@@ -30,14 +30,22 @@ const PHASE_STRUCTURE: Record<string, { label: string; subfolders: Record<string
       "Agents.md": "agents_md",
     },
   },
-  Build: {
-    label: "Phase 4 - Build",
+  Review: {
+    label: "Phase 4 - Review",
     subfolders: {
+      "Security Review": "security_agent",
+      "Definition Doc": "doc_agent",
+    },
+  },
+  Build: {
+    label: "Phase 5 - Build",
+    subfolders: {
+      "PM Tickets": "pm_agent",
       "Handover Doc": "reverse_doc",
     },
   },
   Eval: {
-    label: "Phase 5 - Eval",
+    label: "Phase 6 - Eval",
     subfolders: {
       "Evaluation Reports": "eval_agent",
     },

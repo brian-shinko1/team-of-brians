@@ -5,7 +5,7 @@ import { useAgents } from "@/context/AgentsContext";
 import { AgentModal } from "@/components/AgentModal";
 import { MeetingCopilotModal } from "@/components/MeetingCopilotModal";
 import { JarvisModal } from "@/components/JarvisModal";
-import { INITIAL_AGENTS, PREVIOUS_AGENT } from "@/lib/agents";
+import { INITIAL_AGENTS, NEXT_AGENT, PREVIOUS_AGENT, PROFILE_BYPASS } from "@/lib/agents";
 
 // ── Isometric math ─────────────────────────────────────────────────────────────
 
@@ -41,28 +41,37 @@ const ROOMS = [
   { id: "Plan",         col: 0,  row: 0, w: 6, d: 4, floor: "#dff0df", wL: "#92bb92", wR: "#aad0aa", label: "#3a6b3a" },
   { id: "Design",       col: 7,  row: 0, w: 5, d: 4, floor: "#dde8f8", wL: "#7a9fd0", wR: "#9ab8e4", label: "#243f70" },
   { id: "Architecture", col: 13, row: 0, w: 5, d: 4, floor: "#faeedd", wL: "#c89840", wR: "#dcb458", label: "#704010" },
-  { id: "Build",        col: 1,  row: 6, w: 5, d: 4, floor: "#edddf8", wL: "#9060c0", wR: "#aa80d8", label: "#4a1870" },
-  { id: "Eval",         col: 8,  row: 6, w: 4, d: 4, floor: "#fde0e0", wL: "#c86868", wR: "#e08888", label: "#701818" },
+  { id: "Review",       col: 13, row: 6, w: 5, d: 4, floor: "#d0f4f9", wL: "#4db8cc", wR: "#6acfdf", label: "#0a5a6a" },
+  { id: "Eval",         col: 1,  row: 6, w: 5, d: 4, floor: "#fde0e0", wL: "#c86868", wR: "#e08888", label: "#701818" },
+  { id: "Build",        col: 8,  row: 6, w: 4, d: 4, floor: "#edddf8", wL: "#9060c0", wR: "#aa80d8", label: "#4a1870" },
 ];
 
 // ── Agent grid positions ───────────────────────────────────────────────────────
 
 const AGENT_POS: Record<string, [number, number]> = {
-  meeting_input:    [1,  1],
+  // ── Plan: chain flows left → right across the room ─────────────────────────
+  meeting_input:    [1,  2],
+  summarise:        [3,  1],
+  cps:              [3,  3],
+  prd:              [5,  2],
   meeting_copilot:  [5, -1],  // secretary next to Director Brian
   jarvis:           [7, -1],  // Jarvis — tech advisor near Brian's office
-  summarise:     [4,  2],
-  cps:           [2,  3],
-  prd:           [4,  3],
-  event_storm:   [8,  1],
-  principles:    [10, 1],
-  domain_model:  [9,  3],
-  architecture:  [14, 1],
-  spec:          [16, 1],
-  agents_md:     [15, 3],
-  pm_agent:      [2,  7],
-  reverse_doc:   [4,  7],
-  eval_agent:    [9,  8],
+  // ── Design: continues from prd, flows right ─────────────────────────────────
+  event_storm:      [8,  1],
+  principles:       [9,  3],
+  domain_model:     [11, 1],
+  // ── Architecture: continues right, drops down to Review ─────────────────────
+  architecture:     [14, 1],
+  spec:             [15, 3],
+  agents_md:        [17, 2],
+  // ── Review: entry from Architecture right side, chain flows left ─────────────
+  security_agent:   [16, 6],
+  doc_agent:        [14, 7],
+  // ── Build: entry from Review, flows left toward Eval ────────────────────────
+  reverse_doc:      [11, 7],
+  pm_agent:         [9,  8],
+  // ── Eval ─────────────────────────────────────────────────────────────────────
+  eval_agent:       [3,  8],
 };
 
 // ── Colors ─────────────────────────────────────────────────────────────────────
@@ -71,6 +80,7 @@ const SHIRT: Record<string, string> = {
   Plan:         "#34d399",
   Design:       "#60a5fa",
   Architecture: "#f59e0b",
+  Review:       "#22d3ee",
   Build:        "#a78bfa",
   Eval:         "#f87171",
 };
@@ -79,6 +89,7 @@ const DESK_BASE: Record<string, string> = {
   Plan:         "#7aaa7a",
   Design:       "#6a8ec0",
   Architecture: "#b89040",
+  Review:       "#0891b2",
   Build:        "#8860b0",
   Eval:         "#a86868",
 };
@@ -141,6 +152,7 @@ const PHASE_COSTUME: Record<string, [string, string, string]> = {
   Plan:         ["#3b0764", "#7c3aed", "#f59e0b"],  // deep purple armour, purple kabuto, gold crest
   Design:       ["#052e16", "#16a34a", "#fbbf24"],  // deep green armour, green kabuto, gold crest
   Architecture: ["#431407", "#c2410c", "#fbbf24"],  // deep rust armour, orange kabuto, gold crest
+  Review:       ["#083344", "#0891b2", "#e0f2fe"],  // deep cyan armour, cyan kabuto, ice crest
   Build:        ["#172554", "#1d4ed8", "#f8fafc"],  // deep navy armour, blue kabuto, white crest
   Eval:         ["#1c0533", "#9333ea", "#f8fafc"],  // deep violet armour, violet kabuto, white crest
 };
@@ -501,12 +513,80 @@ const CORRIDOR_TILES: Array<[number, number]> = [
   ...Array.from({ length: 18 }, (_,i): [number,number] => [i, 5]),
   [7,6],[7,7],[7,8],[7,9],
   [0,6],[0,7],[0,8],[0,9],
+  [12,6],[12,7],[12,8],[12,9],  // between Eval and Review
 ];
+
+// ── Pipeline RailLine ──────────────────────────────────────────────────────────
+// Cherry blossom petals drifting along an ink-brush trail between samurai
+
+// Each petal: two overlapping ellipses rotated to form a teardrop shape
+function Petal({ angle, dur, begin }: { angle: number; dur: number; begin: number }) {
+  return (
+    <g transform={`rotate(${angle})`}>
+      <ellipse cx="0" cy="-1.2" rx="2.1" ry="4" fill="#fda4af">
+        <animate attributeName="opacity"
+          values="0;0.9;0.85;0"
+          keyTimes="0;0.12;0.82;1"
+          dur={`${dur}s`} begin={`${begin}s`} repeatCount="indefinite" />
+      </ellipse>
+      <ellipse cx="0.6" cy="-2" rx="1.1" ry="2.4" fill="#fecdd3" opacity="0.65" />
+      {/* centre vein */}
+      <line x1="0" y1="0" x2="0" y2="-3.5" stroke="#f9a8d4" strokeWidth="0.4" opacity="0.5" />
+    </g>
+  );
+}
+
+function RailLine({ fromId, toId, isBypassed }: { fromId: string; toId: string; isBypassed: boolean }) {
+  const from = isoPos(AGENT_POS[fromId][0], AGENT_POS[fromId][1]);
+  const to   = isoPos(AGENT_POS[toId][0],   AGENT_POS[toId][1]);
+  const fx = from.x, fy = from.y - 2;
+  const tx = to.x,   ty = to.y   - 2;
+  const dx = tx - fx, dy = ty - fy;
+  const rawLen = Math.sqrt(dx * dx + dy * dy);
+  if (rawLen < 1) return null;
+  const nx = dx / rawLen, ny = dy / rawLen;
+
+  const gap = 22;
+  const sx = fx + nx * gap, sy = fy + ny * gap;
+  const ex = tx - nx * gap, ey = ty - ny * gap;
+
+  // Slight breeze curve — control point offset perpendicularly so petals
+  // arc gently rather than travel in a dead straight line
+  const cpx = (sx + ex) / 2 + (-ny) * 14;
+  const cpy = (sy + ey) / 2 + ( nx) * 14;
+  const pathD = `M ${sx},${sy} Q ${cpx},${cpy} ${ex},${ey}`;
+
+  const numPetals = 5;
+  const dur       = 2.2;
+  const angles    = [0, 28, -18, 42, -8];
+
+  return (
+    <g opacity={isBypassed ? 0.07 : 1}>
+      {/* Ink-brush trail */}
+      <path d={pathD}
+        fill="none" stroke="#1e293b" strokeWidth={0.7}
+        strokeDasharray="3 8" opacity={0.15} />
+      {/* Drifting petals */}
+      {Array.from({ length: numPetals }, (_, i) => {
+        const begin = (i / numPetals) * dur;
+        return (
+          <g key={i}>
+            <Petal angle={angles[i]} dur={dur} begin={begin} />
+            <animateMotion path={pathD}
+              dur={`${dur}s`} begin={`${begin}s`}
+              repeatCount="indefinite" rotate="auto-reverse" />
+          </g>
+        );
+      })}
+    </g>
+  );
+}
 
 // ── TeamView ───────────────────────────────────────────────────────────────────
 
 export function TeamView() {
-  const { agents } = useAgents();
+  const { agents, settings } = useAgents();
+  const bypass = PROFILE_BYPASS[settings.pipelineProfile ?? "standard"];
   const [modalId,    setModalId]    = useState<string | null>(null);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const prevStatusRef = useRef<Record<string, string>>({});
@@ -549,9 +629,9 @@ export function TeamView() {
   const oy   = 110;        // extra top margin for King Brian above row 0
 
   // rightmost: col=17,row=0 → 884, +52 edge = 936 → svgW = 936+ox+60
-  // bottom: deepest desk at (16,9) → (16+9)*26=650, +26+WH+40 = 744 → svgH = 744+oy
+  // bottom: deepest desk at (17,9) for Review → (17+9)*26=676, +26+WH+40 → svgH
   const svgW = 936 + ox + 60;
-  const svgH = 650 + oy + 90;
+  const svgH = 700 + oy + 90;
 
   // Painter's order: sort by depth (col+row), back-to-front
   const agentObjects = INITIAL_AGENTS
@@ -613,6 +693,32 @@ export function TeamView() {
               ).flat()
             )}
 
+            {/* ── Pipeline rail lines ── */}
+            {Object.entries(NEXT_AGENT).map(([fromId, toId]) => {
+              if (!AGENT_POS[fromId] || !AGENT_POS[toId]) return null;
+              return (
+                <RailLine key={`rail-${fromId}-${toId}`}
+                  fromId={fromId} toId={toId}
+                  isBypassed={bypass.has(fromId) || bypass.has(toId)}
+                />
+              );
+            })}
+
+            {/* ── Profile bypass jump rails — active shortcut connections ── */}
+            {bypass.size > 0 && (() => {
+              const seen = new Set<string>();
+              return Object.keys(AGENT_POS)
+                .filter(fromId => !bypass.has(fromId) && NEXT_AGENT[fromId] && bypass.has(NEXT_AGENT[fromId]))
+                .map(fromId => {
+                  let dest = NEXT_AGENT[fromId];
+                  while (dest && bypass.has(dest)) dest = NEXT_AGENT[dest];
+                  const key = `${fromId}-${dest}`;
+                  if (!dest || !AGENT_POS[dest] || seen.has(key)) return null;
+                  seen.add(key);
+                  return <RailLine key={`jump-${key}`} fromId={fromId} toId={dest} isBypassed={false} />;
+                });
+            })()}
+
             {/* ── SW walls (left column) ── */}
             {ROOMS.flatMap(room =>
               Array.from({ length: room.d }, (_, dr) => {
@@ -668,7 +774,7 @@ export function TeamView() {
             {agentObjects.map((agent, idx) => {
               const { x, y } = isoPos(agent.col, agent.row);
               const feetY    = y - 14;
-              const nameY    = y + TH + WH + 7;
+              const nameY    = feetY + 18;
               const hasOutput = !!agents[agent.id]?.output;
 
               const shortName = agent.name
@@ -680,9 +786,16 @@ export function TeamView() {
               void renderedKing;
 
               const isKatana = agent.id === "jarvis" || agent.id === "meeting_copilot";
+              const isBypassed = bypass.has(agent.id);
 
               return (
-                <g key={agent.id} onClick={() => setModalId(agent.id)} style={{ cursor: "pointer" }}>
+                <g key={agent.id}
+                   onClick={() => setModalId(agent.id)}
+                   style={{
+                     cursor: "pointer",
+                     opacity: isBypassed ? 0.25 : 1,
+                     filter: isBypassed ? "grayscale(1)" : undefined,
+                   }}>
                   {!isKatana && <Desk col={agent.col} row={agent.row} phase={agent.phase} />}
                   {isKatana
                     ? <PixelKatana x={x} y={feetY} label={shortName} status={agent.status} />
@@ -693,14 +806,21 @@ export function TeamView() {
                   {/* invisible hit area */}
                   <ellipse cx={x} cy={feetY - 14} rx={16} ry={22} fill="transparent" />
 
-                  {/* name — katanas render their own label */}
-                  {!isKatana && (
-                    <text x={x} y={nameY}
-                      textAnchor="middle" fontSize={7.5} fontFamily="monospace" fontWeight="600"
-                      fill="#64748b" opacity={0.8}>
-                      {shortName}
-                    </text>
-                  )}
+                  {/* name badge — pill behind text for legibility on any floor */}
+                  {!isKatana && (() => {
+                    const bw = shortName.length * 4.6 + 10;
+                    return (
+                      <>
+                        <rect x={x - bw / 2} y={nameY - 8} width={bw} height={11}
+                          rx={3} fill="white" opacity={0.82} />
+                        <text x={x} y={nameY}
+                          textAnchor="middle" fontSize={7} fontFamily="monospace" fontWeight="700"
+                          fill="#292524">
+                          {shortName}
+                        </text>
+                      </>
+                    );
+                  })()}
 
                   {/* output dot */}
                   {hasOutput && (
